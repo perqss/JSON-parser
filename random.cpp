@@ -28,7 +28,7 @@ int main ()
     JSONParser parser;
     Resource resource(str1);
     std::unordered_map<std::string, std::any> map;
-    map = std::any_cast<std::unordered_map<std::string, std::any>>(parser.parse(str1));
+    map = std::any_cast<std::unordered_map<std::string, std::any>>(parser.parse(str2));
     map = std::any_cast<std::unordered_map<std::string, std::any>>(map["owner"]);
     std::string res = std::any_cast<std::string>(map["address"]);
     std::cout << res;

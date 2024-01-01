@@ -46,9 +46,9 @@ class JSONParser
             return result;
         }
 
-        std::string removeOutermostCurlyBrackets(std::string& data, std::size_t& objectEnd)
+        std::string removeOutermostCurlyBrackets(std::string& data, std::string result, std::size_t& objectEnd)
         {
-            std::string result;
+            std::string parsedData;
             std::stack<char> s;
             std::size_t firstOccurrence = data.find('{');
 
@@ -66,14 +66,19 @@ class JSONParser
                 {
                     s.pop();
                     if (s.empty())
-                        data.erase(i, 1);
+                        break;
                 }
-                if (!s.empty())
-                    result += data[i];
+                parsedData += data[i];
                 i++;
+                if (i == data.size()) // throw exception for wrong json
+                {
+
+                }
             }
-            objectEnd = i + 1;
-            return result;
+            data.erase(i, 1);
+            std::size_t sizeDiff = result.size() - data.size();
+            objectEnd = i + sizeDiff;
+            return parsedData;
         }
 
 
@@ -136,8 +141,9 @@ class JSONParser
             std::size_t keyEndPos;
             std::size_t valStartPos;
             std::size_t valEndPos;
+            char val;
 
-            result = removeOutermostCurlyBrackets(data, objectEnd);
+            result = removeOutermostCurlyBrackets(data, result, objectEnd);
 
             while ((keyEndPos = result.find(':', keyStartPos)) != std::string::npos)
             {
@@ -157,6 +163,7 @@ class JSONParser
                 {
                     map[key] = parseUtil(data, result, objectEnd);
                     valEndPos = objectEnd;
+                    val = result[valEndPos];
                 }
                 else if (result[valStartPos] == '[')
                 {

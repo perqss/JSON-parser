@@ -8,20 +8,12 @@
 #include <map>
 #include <sstream>
 #include <any>
+#include <memory>
 
-enum ResourceType {UNKNOWN, ARRAY, OBJECT, PRIMITIVE};
+enum ResourceType {UNKNOWN, ARRAY, OBJECT, STRING};
 
 class Resource;
-
-class Resource
-{
-    private:
-        std::string data;
-        std::unordered_map<std::string, Resource*> resource_map;
-        std::vector<Resource*> resource_vector;
-    public:
-        Resource(std::string data) : data(data) {}
-};
+class JSONParser;
 
 class JSONParser
 {
@@ -46,66 +38,65 @@ class JSONParser
             return result;
         }
 
-        std::string removeOutermostCurlyBrackets(std::string& data, std::string result, std::size_t& objectEnd)
+        std::pair<std::string, std::size_t> removeOutermostCurlyBrackets(std::string currentObject, std::size_t objectStart)
         {
-            std::string parsedData;
+            std::size_t objectEnd;
+            std::string nestedObject;
             std::stack<char> s;
-            std::size_t firstOccurrence = data.find('{');
-
-            if (firstOccurrence == std::string::npos)
-                return result;
-
-            data.erase(firstOccurrence, 1);
             s.push('{');
-            std::size_t i = firstOccurrence;
+            std::size_t i = objectStart + 1;
+
             while(!s.empty())
             {
-                if (data[i] == '{')
+                if (currentObject[i] == '{')
                     s.push('{');
-                else if (data[i] == '}')
+                else if (currentObject[i] == '}')
                 {
                     s.pop();
                     if (s.empty())
                         break;
                 }
-                parsedData += data[i];
+                
+                nestedObject += currentObject[i];
                 i++;
-                if (i == data.size()) // throw exception for wrong json
+                if (i == currentObject.size()) // throw exception for wrong json
                 {
 
                 }
             }
-            data.erase(i, 1);
-            std::size_t sizeDiff = result.size() - data.size();
-            objectEnd = i + sizeDiff;
-            return parsedData;
+            objectEnd = i;
+            return std::make_pair(nestedObject, objectEnd);
         }
 
+        std::pair<std::string, std::size_t> removeOuterMostSquareBrackets(std::string currentArray, std::size_t arrayStart)
+        {
+            std::size_t arrayEnd;
+            std::string nestedArray;
+            std::stack<char> s;
+            s.push('[');
+            std::size_t i = arrayStart + 1;
 
+            while(!s.empty())
+            {
+                if (currentArray[i] == '[')
+                    s.push('[');
+                else if (currentArray[i] == ']')
+                {
+                    s.pop();
+                    if (s.empty())
+                        break;
+                }
+                
+                nestedArray += currentArray[i];
+                i++;
+                if (i == currentArray.size()) // throw exception for wrong json
+                {
 
-        // std::size_t handleObject(std::string key, std::string& data, std::size_t pos, std::unordered_map<std::string, std::any>& map)
-        // {
-        //     std::stack<char> s;
-        //     s.push(data[pos]);
-        //     std::size_t keyStartPos = pos + 1;
-        //     std::size_t keyEndPos;
-        //     std::size_t valStartPos;
-        //     std::size_t valEndPos;
-        //     while ((keyEndPos = data.find(':', keyStartPos)) != std::string::npos)
-        //     {
-        //         valStartPos = data.find_first_not_of(":", keyEndPos);
-
-        //     }
-        // }
-
-        // std::size_t handleArray(std::string key, std::string& arr, std::size_t po, std::unordered_map<std::string, std::any>& map)
-        // {
-
-        // }
-        void handlePrimitiveType(std::string key, std::string value, std::unordered_map<std::string, std::any>& map)
-        {   
-            map[key] = value;
-        }
+                }
+            }
+            arrayEnd = i;
+            return std::make_pair(nestedArray, arrayEnd);
+        }        
 
         std::size_t handleString(std::string data, std::size_t pos)
         {
@@ -121,8 +112,51 @@ class JSONParser
                     finalPos = i + 1;
                     break;
                 }
+                prevC = data[i];
             }
             return finalPos;
+        }
+
+        std::pair<std::vector<std::any>, std::size_t> handleArray(std::string data, std::size_t pos)
+        {
+            std::vector<std::any> arr; 
+            std::size_t startPos = 0;
+            std::size_t endPos;
+            std::size_t i = startPos;
+            std::pair<std::string, std::size_t> result = removeOuterMostSquareBrackets(data, pos);
+            data = result.first;
+            std::size_t endOfArrayPos = result.second;
+            std::string value;
+            while (startPos < data.size())
+            {
+                if (startPos >= endOfArrayPos)
+                {
+                    break;
+                }
+                else if (data[startPos] == '[')
+                {
+                    std::pair<std::vector<std::any>, std::size_t> result = handleArray(data, startPos);
+                    arr.push_back(result.first);
+                    endPos = result.second + 1;
+                }
+                else if (data[startPos] == '{')
+                {
+                    std::pair<std::any, std::size_t> result = parseUtil(data, startPos);
+                    arr.push_back(result.first);
+                    endPos = result.second + 1;                    
+                }
+                else 
+                {
+                    startPos = data.find_first_not_of(',', startPos);
+                    endPos = data.find(',', startPos);
+                    if (endPos == std::string::npos)
+                        endPos = data.size();
+                    value = data.substr(startPos, endPos - startPos);
+                    arr.push_back(value);
+                }
+                startPos = endPos + 1;
+            }
+            return std::make_pair(arr, endOfArrayPos);
         }
 
         std::any parse(const std::string& data)
@@ -130,82 +164,102 @@ class JSONParser
             std::unordered_map<std::string, std::any> map;
             std::size_t objectEnd = 0;
             std::string dataWithoutWhitespace = removeWhitespace(data);
-            std::string result = dataWithoutWhitespace;
-            return parseUtil(dataWithoutWhitespace, result, objectEnd);
+            std::string currentObject = dataWithoutWhitespace;
+            std::size_t objectStart = 0;
+            std::pair<std::any, std::size_t> result = parseUtil(currentObject, objectStart);
+            return result.first;
         }
 
-        std::any parseUtil(std::string& data, std::string result, std::size_t& objectEnd)
+        std::pair<std::any, std::size_t> parseUtil(std::string currentObject, std::size_t objectStart)
         {
             std::unordered_map<std::string, std::any> map;
+            std::vector<std::any> arr;
             std::size_t keyStartPos = 0;
             std::size_t keyEndPos;
             std::size_t valStartPos;
             std::size_t valEndPos;
-            char val;
+            std::pair<std::string, std::size_t> result = removeOutermostCurlyBrackets(currentObject, objectStart);
+            currentObject = result.first;
+            std::size_t objectEnd = result.second;
 
-            result = removeOutermostCurlyBrackets(data, result, objectEnd);
-
-            while ((keyEndPos = result.find(':', keyStartPos)) != std::string::npos)
+            while ((keyEndPos = currentObject.find(':', keyStartPos)) != std::string::npos)
             {
-                if ((valStartPos = result.find_first_not_of(":", keyEndPos)) == std::string::npos)
+                if ((valStartPos = currentObject.find_first_not_of(":", keyEndPos)) == std::string::npos)
                     break;
-                //valEndPos = data.find(',', valStartPos);
-                std::string key = result.substr(keyStartPos, keyEndPos - keyStartPos);
-                // if (data[valStartPos] == '{')
-                // {
-                //     parse(data, valStartPos + 1);
-                // }
-                if (result[valStartPos] == '\'')
-                {
-                    valEndPos = handleString(result, valStartPos + 1);
-                }
-                else if (result[valStartPos] == '{')
-                {
-                    map[key] = parseUtil(data, result, objectEnd);
-                    valEndPos = objectEnd;
-                    val = result[valEndPos];
-                }
-                else if (result[valStartPos] == '[')
-                {
 
+                std::string key = currentObject.substr(keyStartPos, keyEndPos - keyStartPos);
+
+                if (currentObject[valStartPos] == '\'')
+                {
+                    valEndPos = handleString(currentObject, valStartPos + 1);
+                }
+                else if (currentObject[valStartPos] == '{')
+                {
+                    std::pair<std::any, std::size_t> result = parseUtil(currentObject, valStartPos);
+                    map[key] = result.first;
+                    valEndPos = result.second + 1;
+                }
+                else if (currentObject[valStartPos] == '[')
+                {
+                    std::pair<std::vector<std::any>, std::size_t> result = handleArray(currentObject, valStartPos);
+                    map[key] = result.first;
+                    valEndPos = result.second + 1;
                 }
                 else
                 {
-                    valEndPos = result.find(',', valStartPos);
+                    valEndPos = currentObject.find(',', valStartPos);
                     if (valEndPos == std::string::npos)
-                        valEndPos = result.size();
+                        valEndPos = currentObject.size();
                 }
 
                 auto it = map.find(key);
                 if (it == map.end())
                 {
-                    std::string value = result.substr(valStartPos, valEndPos - valStartPos);
+                    std::string value = currentObject.substr(valStartPos, valEndPos - valStartPos);
                     map[key] = value;
                 }
                 keyStartPos = valEndPos + 1;
-                //handlePrimitiveType(key, value, map);
-                //std::cout << "key: " << key << " " << "value: "<< value << std::endl;
             }
-            return map;
+            return std::make_pair(map, objectEnd);
         }
+};
 
-        void parse1(std::string& data)
+class Resource
+{
+    private:
+        std::string data;
+        std::unordered_map<std::string, std::any> parsedData;
+        std::vector<std::any> arr;
+        std::string value;
+        Resource* resourcePtr;
+        JSONParser parser;
+        Resource(std::string value, bool parse) : value(value) {}
+        Resource(std::vector<std::any>, bool parse) {}
+        Resource(std::unordered_map<std::string, std::any> map, bool parse) : parsedData(map) {}
+    public:
+        Resource(std::string data) : data(data)
         {
-            std::map<std::string, std::string> m;
-
-            std::string key, val;
-            std::istringstream iss(data);
-
-            while(std::getline(std::getline(iss, key, ':') >> std::ws, val))
+            parsedData = std::any_cast<std::unordered_map<std::string, std::any>>(parser.parse(data));
+        }
+        Resource& operator[](std::string key)
+        {
+            if (parsedData[key].type() == typeid(std::string))
             {
-                std::cout << "key: " << key << " " << "value: "<< val << std::endl;
-                m[key] = val;
+               resourcePtr = new Resource(std::any_cast<std::string>(parsedData[key]), false);
             }
+            else if (parsedData[key].type() == typeid(std::vector<std::any>))
+            {
+                resourcePtr = new Resource(std::any_cast<std::vector<std::any>>(parsedData[key]), false);
+            }
+            else if (parsedData[key].type() == typeid(std::unordered_map<std::string, std::any>))
+            {
+                resourcePtr = new Resource(std::any_cast<std::unordered_map<std::string, std::any>>(parsedData[key]), false);
+            }
+            return *resourcePtr;
         }
-
-        void parse2(std::string& data)
+        ~Resource()
         {
-
+            delete resourcePtr;
         }
 };
 

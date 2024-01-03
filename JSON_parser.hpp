@@ -9,6 +9,7 @@
 #include <sstream>
 #include <any>
 #include <memory>
+#include <concepts>
 
 enum ResourceType {UNKNOWN, ARRAY, OBJECT, STRING};
 
@@ -224,42 +225,223 @@ class JSONParser
         }
 };
 
+template <typename T, typename U>
+concept IsVectorOfDataType = requires(T t, U elem)
+{
+    // Checks that T is a vector and its value_type is the same as dataType
+    { t.push_back(elem) } -> std::same_as<void>;
+    requires std::same_as<typename T::value_type, U>;
+};
+
+template <typename T, typename ValueType>
+concept IsMapOfDataType = requires(ValueType value)
+{
+    requires std::same_as<T, std::unordered_map<typename T::key_type, typename T::mapped_type, typename T::hasher, typename T::key_equal, 
+             typename T::allocator_type>>;
+    requires std::same_as<typename T::mapped_type, ValueType>;
+};
+
 class Resource
 {
     private:
         std::string data;
-        std::unordered_map<std::string, std::any> parsedData;
-        std::vector<std::any> arr;
-        std::string value;
-        Resource* resourcePtr;
+        std::any parsedData;
+        std::unique_ptr<Resource> resourceNextPtr;
+        //std::unique_ptr<Resource> resourcePtr;
         JSONParser parser;
-        Resource(std::string value, bool parse) : value(value) {}
-        Resource(std::vector<std::any>, bool parse) {}
-        Resource(std::unordered_map<std::string, std::any> map, bool parse) : parsedData(map) {}
+        Resource(std::any parsedData, bool parse) : parsedData(parsedData) {}
     public:
         Resource(std::string data) : data(data)
         {
-            parsedData = std::any_cast<std::unordered_map<std::string, std::any>>(parser.parse(data));
+            try
+            {
+                parsedData = std::any_cast<std::unordered_map<std::string, std::any>>(parser.parse(data));
+                //resourcePtr = std::unique_ptr<Resource>(new Resource(parsedData, false));
+            }
+            catch (const std::bad_any_cast& e)
+            {
+                throw std::runtime_error("Passed string is not in JSON format");
+            }
         }
+
         Resource& operator[](std::string key)
         {
-            if (parsedData[key].type() == typeid(std::string))
+            try
             {
-               resourcePtr = new Resource(std::any_cast<std::string>(parsedData[key]), false);
+                std::unordered_map<std::string, std::any> map = std::any_cast<std::unordered_map<std::string, std::any>>(parsedData);
+               // std::vector<std::string> v = std::any_cast<std::vector<std::string>>(parsedData);
+                std::any value = map.at(key);
+                resourceNextPtr = std::unique_ptr<Resource>(new Resource(value, false));
+                //resourceNextPtr->resourcePtr = std::unique_ptr<Resource>(new Resource(parsedData, false));
+                return *resourceNextPtr;
             }
-            else if (parsedData[key].type() == typeid(std::vector<std::any>))
+            catch (const std::bad_any_cast& e)
             {
-                resourcePtr = new Resource(std::any_cast<std::vector<std::any>>(parsedData[key]), false);
+                throw std::runtime_error("Object does not have a key: " + key);
             }
-            else if (parsedData[key].type() == typeid(std::unordered_map<std::string, std::any>))
+            catch (const std::out_of_range& e)
             {
-                resourcePtr = new Resource(std::any_cast<std::unordered_map<std::string, std::any>>(parsedData[key]), false);
+                throw std::runtime_error("Key: " + key + " out of range");
             }
-            return *resourcePtr;
         }
-        ~Resource()
+
+        Resource& operator[](std::size_t index)
         {
-            delete resourcePtr;
+            try
+            {
+                std::vector<std::any> v = std::any_cast<std::vector<std::any>>(parsedData);
+                std::any value = v.at(index);
+                resourceNextPtr = std::unique_ptr<Resource>(new Resource(value, false));
+                return *resourceNextPtr;
+            }
+            catch(const std::bad_any_cast& e)
+            {
+                throw std::runtime_error("Vector does not have a index: " + std::to_string(index));
+            }
+            catch (const std::out_of_range& e)
+            {
+                throw std::runtime_error("Index: " + std::to_string(index) + " out of range");
+            }
+            
         }
+
+        template<typename dataType>
+        dataType as(const dataType& def = dataType())
+        {
+            try
+            {
+                return std::any_cast<dataType>(parsedData);
+            }
+            catch(const std::bad_any_cast& e)
+            {
+                return def;
+            }
+        }
+
+        template<typename DataType, IsVectorOfDataType<DataType> VectorType=std::vector<DataType>>
+        VectorType as_vector(const VectorType& def = VectorType())
+        {
+            try
+            {
+                VectorType res;
+                std::vector<std::any> dataV = std::any_cast<std::vector<std::any>>(parsedData);
+                std::vector<std::unique_ptr<Resource>> resourceV;
+                for (std::size_t i = 0; i < dataV.size(); ++i)
+                    resourceV.push_back(std::unique_ptr<Resource>(new Resource(dataV[i], false)));
+                for (std::size_t i = 0; i < resourceV.size(); ++i)
+                    res.push_back(resourceV[i]->as<DataType>());
+                return res;
+            }
+            catch (const std::bad_any_cast& e)
+            {
+                return def;
+            }
+        }
+        
+        // in as_map key is always a string
+        template<typename ValueType, IsMapOfDataType<ValueType> MapType=std::unordered_map<std::string, ValueType>>
+        MapType as_map(const MapType& def = MapType())
+        {
+            try
+            {
+                MapType res;
+                std::unordered_map<std::string, std::any> dataM = std::any_cast<std::unordered_map<std::string, std::any>>(parsedData);
+                std::unordered_map<std::string, std::unique_ptr<Resource>> resourceM;
+                for (const auto& pair : dataM)
+                    resourceM[pair.first] = std::unique_ptr<Resource>(new Resource(dataM[pair.first], false));
+                for (const auto& pair : resourceM)
+                    res[pair.first] = resourceM[pair.first]->as<ValueType>();
+                return res;
+            }
+            catch (const std::bad_any_cast& e)
+            {
+                return def;
+            }
+        }
+
+        template<typename T>
+        T cast(const T&);
 };
+
+
+// template<typename T>
+// T Resource::cast(const T& def)
+// {
+//     try
+//     {
+//         return std::any_cast<T>(parsedData);
+//     }
+//     catch (const std::bad_any_cast& e)
+//     {
+//         return T(def);
+//     }
+// }
+
+template<>
+std::string Resource::as<std::string>(const std::string& def)
+{
+    try
+    {
+        return std::any_cast<std::string>(parsedData);
+    }
+    catch(const std::bad_any_cast& e)
+    {
+        return std::string(def);
+    }
+}
+
+template<>
+int Resource::as<int>(const int& def)
+{
+    try
+    {
+        return std::stoi(std::any_cast<std::string>(parsedData));
+    }
+    catch(const std::exception& e)
+    {
+        return int(def);
+    }
+}
+
+template<>
+float Resource::as<float>(const float& def)
+{
+    try
+    {
+        return std::stof(std::any_cast<std::string>(parsedData));
+    }
+    catch(const std::exception& e)
+    {
+        return float(def);
+    }
+}
+
+template<>
+double Resource::as<double>(const double& def)
+{
+    try
+    {
+       return std::stod(std::any_cast<std::string>(parsedData));
+    }
+    catch(const std::exception& e)
+    {
+        return double(def);
+    }
+}
+
+// specialization for any type
+template<>
+std::any Resource::as<std::any>(const std::any& def)
+{
+    std::cout << "any";
+}
+
+
+// template<>
+// std::vector<int> Resource::as_vector<int>(const std::vector<int>& def)
+// {
+
+// }
+
+
 

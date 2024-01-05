@@ -326,19 +326,6 @@ class Resource
         template <typename T>
         Resource& insertValue(T value)
         {
-            std::any v = std::any_cast<T>(value);
-            Resource* current = this;
-            while (current->resourcePrevPtr != nullptr)
-                current = current->resourcePrevPtr;
-
-            current->parsedData = modifyMap(0, v, current->parsedData);
-            parsedData = v;
-            return *this;
-        }
-       
-        //TODO: specjalizacja dla vector<any>, mapa<any>
-        Resource& operator= (std::vector<std::any> value)
-        {   
             Resource* current = this;
             while (current->resourcePrevPtr != nullptr)
                 current = current->resourcePrevPtr;
@@ -346,6 +333,12 @@ class Resource
             current->parsedData = modifyMap(0, value, current->parsedData);
             parsedData = value;
             return *this;
+        }
+       
+        template <typename T>
+        Resource& operator= (T value)
+        {   
+            return insertValue(value);
         }
 
         template <Numerical DataType>
@@ -460,26 +453,12 @@ class Resource
         }
 };
 
-
-// template<typename T>
-// T Resource::cast(const T& def)
-// {
-//     try
-//     {
-//         return std::any_cast<T>(parsedData);
-//     }
-//     catch (const std::bad_any_cast& e)
-//     {
-//         return T(def);
-//     }
-// }
-
-// template<>
-// Resource& Resource::operator=<const char*>(const char* value)
-// {
-//     std::string SValue = value;
-//     return insertValue(SValue);
-// }
+template<>
+Resource& Resource::operator=<const char*>(const char* value)
+{
+    std::string SValue = value;
+    return insertValue(SValue);
+}
 
 template<>
 std::string Resource::as<std::string>(const std::string& def)
@@ -499,7 +478,10 @@ long long Resource::as<long long>(const long long& def)
 {
     try
     {
-        return std::stoll(std::any_cast<std::string>(parsedData));
+        if (parsedData.type() == typeid(std::string))
+            return std::stoll(std::any_cast<std::string>(parsedData));
+        else
+             return std::any_cast<long long>(parsedData);
     }
     catch(const std::exception& e)
     {
@@ -528,7 +510,10 @@ float Resource::as<float>(const float& def)
 {
     try
     {
-        return std::stof(std::any_cast<std::string>(parsedData));
+        if (parsedData.type() == typeid(std::string))
+            return std::stof(std::any_cast<std::string>(parsedData));
+        else
+            return std::any_cast<float>(parsedData);
     }
     catch(const std::exception& e)
     {
@@ -541,7 +526,10 @@ double Resource::as<double>(const double& def)
 {
     try
     {
-       return std::stod(std::any_cast<std::string>(parsedData));
+        if (parsedData.type() == typeid(std::string))
+            return std::stod(std::any_cast<std::string>(parsedData));
+        else
+            return std::any_cast<double>(parsedData);
     }
     catch(const std::exception& e)
     {

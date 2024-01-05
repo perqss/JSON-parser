@@ -44,9 +44,10 @@ int main ()
     //Resource res = resource["owner1"]["height"];
    //resource["owner1"]["height"] = 180;
    std::vector<std::any> v{10, 50};
-    resource["animals"][0]["coordinates"] = v;   
+   resource["animals"][0]["coordinates"] = v;   
    std::vector<int> v1 = resource["animals"][0]["coordinates"].as_vector<int>();
-   std::cout << str;
+   //std::vector<std::any> v2 = resource["animals"][0]["coordinates"].as_vector<std::any>();
+    std::cout << resource["age"].as<int>();
     //std::cout << std::to_string()
     //std::cout<<resource["owner"]["name"].as<std::string>()<<std::endl;
 }

@@ -241,27 +241,118 @@ concept IsMapOfDataType = requires(ValueType value)
     requires std::same_as<typename T::mapped_type, ValueType>;
 };
 
+template <typename T>
+concept Numerical = std::is_arithmetic_v<T>;
+
 class Resource
 {
     private:
         std::string data;
         std::any parsedData;
-        std::unique_ptr<Resource> resourceNextPtr;
+        std::unique_ptr<Resource> resourceNextPtr = nullptr;
+        Resource* resourcePrevPtr = nullptr;
+        std::vector<std::any> keys;
         //std::unique_ptr<Resource> resourcePtr;
         JSONParser parser;
         Resource(std::any parsedData, bool parse) : parsedData(parsedData) {}
+        Resource() {}
     public:
         Resource(std::string data) : data(data)
         {
             try
             {
                 parsedData = std::any_cast<std::unordered_map<std::string, std::any>>(parser.parse(data));
-                //resourcePtr = std::unique_ptr<Resource>(new Resource(parsedData, false));
             }
             catch (const std::bad_any_cast& e)
             {
                 throw std::runtime_error("Passed string is not in JSON format");
             }
+        }
+
+        Resource(const Resource& other): data(other.data), parsedData(other.parsedData), resourcePrevPtr(other.resourcePrevPtr), keys(other.keys)
+        {
+            if (other.resourceNextPtr != nullptr) 
+                resourceNextPtr = std::unique_ptr<Resource>(new Resource(other.resourceNextPtr->parsedData, false));
+        }
+
+        Resource(Resource&& source) : data(source.data), parsedData(std::move(source.parsedData)), resourceNextPtr(std::move(source.resourceNextPtr)), 
+                                      parser(std::move(source.parser)), resourcePrevPtr(source.resourcePrevPtr), keys(source.keys) {}
+        
+        Resource& operator= (const Resource& source)
+        {
+            if (this != &source)
+            {
+                data = source.data;
+                parsedData = source.parsedData;
+                resourceNextPtr = std::unique_ptr<Resource>(new Resource(source.parsedData, false));
+                resourcePrevPtr = source.resourcePrevPtr;
+                keys = source.keys;
+                parser = source.parser;
+            }
+            return *this;
+        }
+
+        std::any modifyMap(std::size_t index, std::any value, std::any data)
+        {
+            bool isValueString = false;
+            bool isKeyString = false;
+
+            std::string Skey;
+            std::size_t Ikey;
+
+            if (index == keys.size())
+                return value;
+
+            if (keys[index].type() == typeid(std::string))
+            {
+                Skey = std::any_cast<std::string>(keys[index]);
+                isKeyString = true;
+                std::unordered_map<std::string, std::any> map = std::any_cast<std::unordered_map<std::string, std::any>>(data);
+                data = modifyMap(index + 1, value, map[Skey]);
+                map[Skey] = data;
+                return map;
+            }
+            else
+            {
+                Ikey = std::any_cast<std::size_t>(keys[index]);
+                isKeyString = false;
+                std::vector<std::any> v = std::any_cast<std::vector<std::any>>(data);
+                data = modifyMap(index + 1, value, v[Ikey]);
+                v[Ikey] = data;
+                return v;
+            }
+        }
+
+        template <typename T>
+        Resource& insertValue(T value)
+        {
+            std::any v = std::any_cast<T>(value);
+            Resource* current = this;
+            while (current->resourcePrevPtr != nullptr)
+                current = current->resourcePrevPtr;
+
+            current->parsedData = modifyMap(0, v, current->parsedData);
+            parsedData = v;
+            return *this;
+        }
+       
+        //TODO: specjalizacja dla vector<any>, mapa<any>
+        Resource& operator= (std::vector<std::any> value)
+        {   
+            Resource* current = this;
+            while (current->resourcePrevPtr != nullptr)
+                current = current->resourcePrevPtr;
+
+            current->parsedData = modifyMap(0, value, current->parsedData);
+            parsedData = value;
+            return *this;
+        }
+
+        template <Numerical DataType>
+        Resource& operator= (DataType value)
+        {   
+            std::string SValue = std::to_string(value);
+            return insertValue(SValue);
         }
 
         Resource& operator[](std::string key)
@@ -271,7 +362,12 @@ class Resource
                 std::unordered_map<std::string, std::any> map = std::any_cast<std::unordered_map<std::string, std::any>>(parsedData);
                // std::vector<std::string> v = std::any_cast<std::vector<std::string>>(parsedData);
                 std::any value = map.at(key);
-                resourceNextPtr = std::unique_ptr<Resource>(new Resource(value, false));
+                //resourceNextPtr = std::unique_ptr<Resource>(new Resource(value, false));
+                resourceNextPtr = std::unique_ptr<Resource>(new Resource());
+                resourceNextPtr->parsedData = value;
+                resourceNextPtr->resourcePrevPtr = this;
+                resourceNextPtr->keys = keys;
+                resourceNextPtr->keys.push_back(key);
                 //resourceNextPtr->resourcePtr = std::unique_ptr<Resource>(new Resource(parsedData, false));
                 return *resourceNextPtr;
             }
@@ -291,7 +387,11 @@ class Resource
             {
                 std::vector<std::any> v = std::any_cast<std::vector<std::any>>(parsedData);
                 std::any value = v.at(index);
-                resourceNextPtr = std::unique_ptr<Resource>(new Resource(value, false));
+                resourceNextPtr = std::unique_ptr<Resource>(new Resource());
+                resourceNextPtr->parsedData = value;
+                resourceNextPtr->resourcePrevPtr = this;
+                resourceNextPtr->keys = keys;
+                resourceNextPtr->keys.push_back(index);
                 return *resourceNextPtr;
             }
             catch(const std::bad_any_cast& e)
@@ -358,9 +458,6 @@ class Resource
                 return def;
             }
         }
-
-        template<typename T>
-        T cast(const T&);
 };
 
 
@@ -377,6 +474,13 @@ class Resource
 //     }
 // }
 
+// template<>
+// Resource& Resource::operator=<const char*>(const char* value)
+// {
+//     std::string SValue = value;
+//     return insertValue(SValue);
+// }
+
 template<>
 std::string Resource::as<std::string>(const std::string& def)
 {
@@ -386,7 +490,20 @@ std::string Resource::as<std::string>(const std::string& def)
     }
     catch(const std::bad_any_cast& e)
     {
-        return std::string(def);
+        return def;
+    }
+}
+
+template<>
+long long Resource::as<long long>(const long long& def)
+{
+    try
+    {
+        return std::stoll(std::any_cast<std::string>(parsedData));
+    }
+    catch(const std::exception& e)
+    {
+        return def;
     }
 }
 
@@ -395,11 +512,14 @@ int Resource::as<int>(const int& def)
 {
     try
     {
-        return std::stoi(std::any_cast<std::string>(parsedData));
+        if (parsedData.type() == typeid(std::string))
+            return std::stoi(std::any_cast<std::string>(parsedData));
+        else
+            return std::any_cast<int>(parsedData);
     }
     catch(const std::exception& e)
     {
-        return int(def);
+        return def;
     }
 }
 
@@ -412,7 +532,7 @@ float Resource::as<float>(const float& def)
     }
     catch(const std::exception& e)
     {
-        return float(def);
+        return def;
     }
 }
 
@@ -425,7 +545,7 @@ double Resource::as<double>(const double& def)
     }
     catch(const std::exception& e)
     {
-        return double(def);
+        return def;
     }
 }
 
@@ -433,7 +553,7 @@ double Resource::as<double>(const double& def)
 template<>
 std::any Resource::as<std::any>(const std::any& def)
 {
-    std::cout << "any";
+    return parsedData;
 }
 
 

@@ -21,15 +21,14 @@ int main ()
                         "} \n";
 
         std::string str2 =   "{  \n"
-    "    owner: { name: Sam, age: 32, animal: {cat: meow}, address: '123 Animal Drive, New York, 98765.' },  \n"
+    "    owner: { name: Sam, age: 32.5, animal: {cat: meow}, address: '123 Animal Drive, New York, 98765.' },  \n"
     "    owner1: {height: 187.6, age: 54}, \n"
     "    coordinates: [1, 22, 33, -5],       \n"
     "    age: 532, height: 182.5,\n"
     "}";
     std::string s = "text: 'It's his fault'";
     //std::cout << "The JSON string:\n\n" << str << "\n" << std::endl;
-    JSONParser parser;
-    Resource resource(str2);
+    Resource resource(str);
     std::list<int> l;
     //Resource resource1 = resource["owner"]["age"];
     //resource["animals"];
@@ -39,6 +38,15 @@ int main ()
     //    std::cout<<coordinate << std::endl;
     //int age = resource["owner"]["age"].as<int>();
     //std::cout << age << std::endl;
-    std::unordered_map<std::string, int> map = resource["owner1"].as_map<int>();
-    std::cout << str2;
+    //std::unordered_map<std::string, std::any> map = resource["owner"].as_map<std::any>();
+    //map["name"] = resource["owner"]["age"].as<int>();
+    
+    //Resource res = resource["owner1"]["height"];
+   //resource["owner1"]["height"] = 180;
+   std::vector<std::any> v{10, 50};
+    resource["animals"][0]["coordinates"] = v;   
+   std::vector<int> v1 = resource["animals"][0]["coordinates"].as_vector<int>();
+   std::cout << str;
+    //std::cout << std::to_string()
+    //std::cout<<resource["owner"]["name"].as<std::string>()<<std::endl;
 }

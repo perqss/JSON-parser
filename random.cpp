@@ -2,6 +2,7 @@
 #include "JSON_parser.hpp"
 #include <list>
 #include <stack>
+#include <fstream>
 
 int main ()
 {
@@ -29,7 +30,7 @@ int main ()
     std::string s = "text: 'It's his fault'";
     //std::cout << "The JSON string:\n\n" << str << "\n" << std::endl;
     Resource resource(str);
-    std::list<int> l;
+    //std::list<int> l;
     //Resource resource1 = resource["owner"]["age"];
     //resource["animals"];
     //std::vector<int> v = resource["coordinates"].as_vector<int>();
@@ -43,11 +44,15 @@ int main ()
     
     //Resource res = resource["owner1"]["height"];
    //resource["owner1"]["height"] = 180;
-   std::vector<std::any> v{10, 50};
-   resource["animals"][0]["coordinates"] = v;   
-   std::vector<int> v1 = resource["animals"][0]["coordinates"].as_vector<int>();
+   //std::vector<std::any> v{10, 50};
+//    resource["animals"][0]["coordinates"] = v;   
+//    std::vector<int> v1 = resource["animals"][0]["coordinates"].as_vector<int>();
+   //std::any res = resource["animals"][0]["coordinates"].as<std::any>();
    //std::vector<std::any> v2 = resource["animals"][0]["coordinates"].as_vector<std::any>();
-    std::cout << resource["age"].as<int>();
+    //std::cout << resource["age"].as<int>();
     //std::cout << std::to_string()
     //std::cout<<resource["owner"]["name"].as<std::string>()<<std::endl;
+
+    Resource resource1("json_files/example2.json", true);
+    std::cout <<resource1["animals"][0]["height"].as<int>();
 }

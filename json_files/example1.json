@@ -1,0 +1,6 @@
+{
+    "animals": [
+        { "name": "C a  t", "coordinates": [0, 1, 2, 3], "sound": "meow", "height": 2},
+        { "name": "Dog", "coordinates": [0, 1, 5, [24, 32]], "sound": "woof", "height": 3, "comment": "dog dog"}
+    ]
+}

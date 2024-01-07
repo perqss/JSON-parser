@@ -10,8 +10,8 @@
 #include <any>
 #include <memory>
 #include <concepts>
-
-enum ResourceType {UNKNOWN, ARRAY, OBJECT, STRING};
+#include <fstream>
+#include <filesystem>
 
 class Resource;
 class JSONParser;
@@ -26,12 +26,15 @@ class JSONParser
             bool inString = false;
             char prevC = '\0';
 
-            for (char c : input) {
-                if (c == '\'' && prevC != '\\') {
+            for (char c : input)
+            {
+                if ((c == '\'' && prevC != '\\') || (c == '"' && prevC != '\\'))
+                {
                     inString = !inString;
                 }
 
-                if (!std::isspace(c) || inString) {
+                if ((!std::isspace(c) || inString) && c != '"')
+                {
                     result += c;
                 }
                 prevC = c;
@@ -62,7 +65,7 @@ class JSONParser
                 i++;
                 if (i == currentObject.size()) // throw exception for wrong json
                 {
-
+                    throw std::runtime_error("Bad JSON format");
                 }
             }
             objectEnd = i;
@@ -92,7 +95,7 @@ class JSONParser
                 i++;
                 if (i == currentArray.size()) // throw exception for wrong json
                 {
-
+                    throw std::runtime_error("Non JSON format");
                 }
             }
             arrayEnd = i;
@@ -108,7 +111,7 @@ class JSONParser
             for(std::size_t i = pos; i < data.size(); ++i)
             {
                 result += data[i];
-                if (data[i] == '\'' && prevC != '\\')
+                if ((data[i] == '\'' && prevC != '\\') || (data[i] == '"' && prevC != '\\'))
                 {
                     finalPos = i + 1;
                     break;
@@ -190,7 +193,7 @@ class JSONParser
 
                 std::string key = currentObject.substr(keyStartPos, keyEndPos - keyStartPos);
 
-                if (currentObject[valStartPos] == '\'')
+                if (currentObject[valStartPos] == '\'' || currentObject[valStartPos] == '"')
                 {
                     valEndPos = handleString(currentObject, valStartPos + 1);
                 }
@@ -228,7 +231,7 @@ class JSONParser
 template <typename T, typename U>
 concept IsVectorOfDataType = requires(T t, U elem)
 {
-    // Checks that T is a vector and its value_type is the same as dataType
+    // Checks that T has a push_back method and its value_type is the same as dataType
     { t.push_back(elem) } -> std::same_as<void>;
     requires std::same_as<typename T::value_type, U>;
 };
@@ -252,16 +255,15 @@ class Resource
         std::unique_ptr<Resource> resourceNextPtr = nullptr;
         Resource* resourcePrevPtr = nullptr;
         std::vector<std::any> keys;
-        //std::unique_ptr<Resource> resourcePtr;
         JSONParser parser;
-        Resource(std::any parsedData, bool parse) : parsedData(parsedData) {}
-        Resource() {}
+        Resource(std::any parsedData, std::string otherConstructor) : parsedData(parsedData) {}
+        
     public:
-        Resource(std::string data) : data(data)
+        std::any parseData(std::string dataToParse)
         {
             try
             {
-                parsedData = std::any_cast<std::unordered_map<std::string, std::any>>(parser.parse(data));
+                return std::any_cast<std::unordered_map<std::string, std::any>>(parser.parse(dataToParse));
             }
             catch (const std::bad_any_cast& e)
             {
@@ -269,10 +271,38 @@ class Resource
             }
         }
 
+        Resource() {}
+        
+        Resource(std::string data, bool filePath = false)
+        {
+            if (!filePath)
+            {
+                this->data = data;
+                parsedData = parseData(data);
+            }
+            else 
+            {
+                std::filesystem::path filePath(data);
+                if (std::filesystem::exists(filePath))
+                {
+                    std::ifstream t(data);
+                    std::stringstream buffer;
+                    buffer << t.rdbuf();
+                    std::string dataToParse = buffer.str();
+                    this->data = dataToParse;
+                    parsedData = parseData(dataToParse);
+                }
+                else
+                {
+                    throw std::runtime_error("File does not exist");
+                }
+            }
+        }
+
         Resource(const Resource& other): data(other.data), parsedData(other.parsedData), resourcePrevPtr(other.resourcePrevPtr), keys(other.keys)
         {
             if (other.resourceNextPtr != nullptr) 
-                resourceNextPtr = std::unique_ptr<Resource>(new Resource(other.resourceNextPtr->parsedData, false));
+                resourceNextPtr = std::unique_ptr<Resource>(new Resource(other.resourceNextPtr->parsedData, ""));
         }
 
         Resource(Resource&& source) : data(source.data), parsedData(std::move(source.parsedData)), resourceNextPtr(std::move(source.resourceNextPtr)), 
@@ -284,7 +314,7 @@ class Resource
             {
                 data = source.data;
                 parsedData = source.parsedData;
-                resourceNextPtr = std::unique_ptr<Resource>(new Resource(source.parsedData, false));
+                resourceNextPtr = std::unique_ptr<Resource>(new Resource(source.parsedData, ""));
                 resourcePrevPtr = source.resourcePrevPtr;
                 keys = source.keys;
                 parser = source.parser;
@@ -353,15 +383,12 @@ class Resource
             try
             {
                 std::unordered_map<std::string, std::any> map = std::any_cast<std::unordered_map<std::string, std::any>>(parsedData);
-               // std::vector<std::string> v = std::any_cast<std::vector<std::string>>(parsedData);
                 std::any value = map.at(key);
-                //resourceNextPtr = std::unique_ptr<Resource>(new Resource(value, false));
                 resourceNextPtr = std::unique_ptr<Resource>(new Resource());
                 resourceNextPtr->parsedData = value;
                 resourceNextPtr->resourcePrevPtr = this;
                 resourceNextPtr->keys = keys;
                 resourceNextPtr->keys.push_back(key);
-                //resourceNextPtr->resourcePtr = std::unique_ptr<Resource>(new Resource(parsedData, false));
                 return *resourceNextPtr;
             }
             catch (const std::bad_any_cast& e)
@@ -418,11 +445,11 @@ class Resource
             {
                 VectorType res;
                 std::vector<std::any> dataV = std::any_cast<std::vector<std::any>>(parsedData);
-                std::vector<std::unique_ptr<Resource>> resourceV;
+                std::vector<Resource> resourceV;
                 for (std::size_t i = 0; i < dataV.size(); ++i)
-                    resourceV.push_back(std::unique_ptr<Resource>(new Resource(dataV[i], false)));
+                    resourceV.push_back(Resource(dataV[i], ""));
                 for (std::size_t i = 0; i < resourceV.size(); ++i)
-                    res.push_back(resourceV[i]->as<DataType>());
+                    res.push_back(resourceV[i].as<DataType>());
                 return res;
             }
             catch (const std::bad_any_cast& e)
@@ -439,11 +466,11 @@ class Resource
             {
                 MapType res;
                 std::unordered_map<std::string, std::any> dataM = std::any_cast<std::unordered_map<std::string, std::any>>(parsedData);
-                std::unordered_map<std::string, std::unique_ptr<Resource>> resourceM;
+                std::unordered_map<std::string, Resource> resourceM;
                 for (const auto& pair : dataM)
-                    resourceM[pair.first] = std::unique_ptr<Resource>(new Resource(dataM[pair.first], false));
+                    resourceM[pair.first] = Resource(dataM[pair.first], "");
                 for (const auto& pair : resourceM)
-                    res[pair.first] = resourceM[pair.first]->as<ValueType>();
+                    res[pair.first] = resourceM[pair.first].as<ValueType>();
                 return res;
             }
             catch (const std::bad_any_cast& e)
@@ -481,7 +508,7 @@ long long Resource::as<long long>(const long long& def)
         if (parsedData.type() == typeid(std::string))
             return std::stoll(std::any_cast<std::string>(parsedData));
         else
-             return std::any_cast<long long>(parsedData);
+            return std::any_cast<long long>(parsedData);
     }
     catch(const std::exception& e)
     {
@@ -543,13 +570,3 @@ std::any Resource::as<std::any>(const std::any& def)
 {
     return parsedData;
 }
-
-
-// template<>
-// std::vector<int> Resource::as_vector<int>(const std::vector<int>& def)
-// {
-
-// }
-
-
-

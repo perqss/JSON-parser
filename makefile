@@ -1,7 +1,21 @@
-all:
-	g++ -std=c++20 tests/test_parser.cpp -lcppunit -o test_parser
+CC = g++
+CFLAGS = -std=c++20 -g
+LDFLAGS = -lcppunit  # Link against CPPUNIT
+SOURCES = JSON_parser.cpp tests/test_parser.cpp
+OBJECTS = $(SOURCES:.cpp=.o)
+EXECUTABLE = test_parser
+
+all: $(EXECUTABLE)
+
+$(EXECUTABLE): $(OBJECTS)
+	$(CC) $(CFLAGS) $(OBJECTS) -o $@ $(LDFLAGS)
+
+%.o: %.cpp
+	$(CC) $(CFLAGS) -c $< -o $@
+
 test:
 	chmod +x test_parser
 	./test_parser
+
 clean:
-	${RM} test_parser
+	rm -f $(OBJECTS) $(EXECUTABLE)

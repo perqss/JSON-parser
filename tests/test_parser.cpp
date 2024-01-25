@@ -2,6 +2,7 @@
 #include <cppunit/TestCaller.h>
 #include <cppunit/TestSuite.h>
 #include <cppunit/ui/text/TestRunner.h>
+#include <cppunit/extensions/HelperMacros.h>
 #include "../JSON_parser.hpp"
 
 class MyTest : public CppUnit::TestCase

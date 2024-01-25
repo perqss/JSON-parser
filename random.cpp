@@ -4,6 +4,21 @@
 #include <stack>
 #include <fstream>
 
+class Dog
+{
+    public:
+        int age;
+        Dog() {}
+        Dog(int age) : age(age) {}
+};
+
+template<>
+Dog Resource::as<Dog>(const Dog& dog)
+{
+    return Dog(15);
+}
+
+
 int main ()
 {
     std::string str =   "{  \n"
@@ -53,6 +68,8 @@ int main ()
     //std::cout << std::to_string()
     //std::cout<<resource["owner"]["name"].as<std::string>()<<std::endl;
 
-    Resource resource1("json_files/example2.json", true);
-    std::cout <<resource1["animals"][0]["height"].as<int>();
+    // Resource resource1("json_files/example1.json", true);
+    // std::cout <<resource1["animals"][0]["height"].as<int>();
+    Dog dog = resource["animals"][0].as<Dog>();
+    std::cout << "xd";
 }

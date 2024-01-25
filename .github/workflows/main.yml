@@ -13,8 +13,6 @@ jobs:
       - uses: actions/checkout@v2
       - name: install cppunit
         run: sudo apt install -y libcppunit-dev
-      - name: configure
-        run: chmod +x configure && ./configure
       - name: make
         run: make
       - name: make test

@@ -17,6 +17,10 @@ class Owner
 template<> // conversion specialized for custom type
 Owner Resource::as<Owner>(const Owner& owner)
 {
+    /*
+        The underlying types are std::string, std::vector<std::any> and std::unordered_map<std::string, std::any>. so
+        you need to use them while doing std::any_cast during conversion
+    */
     std::unordered_map<std::string, std::any> owner_map = std::any_cast<std::unordered_map<std::string, std::any>>(parsedData);
     std::string name = std::any_cast<std::string>(owner_map["name"]);
     std::string address = std::any_cast<std::string>(owner_map["address"]);
